@@ -8,6 +8,8 @@ tasks: https://7guis.github.io/7guis/
 
 > https://7guis.github.io/7guis/tasks#counter
 
+![counter screenshot](docs/images/counter.png)
+
 仕様:
 
 - スクリーン上に数値の入力欄 **T** とボタン **B** がある
@@ -24,6 +26,8 @@ tasks: https://7guis.github.io/7guis/
 ## 2. Temperature Converter (温度変換器)
 
 > https://7guis.github.io/7guis/tasks#temp
+
+![temp_conv screenshot](docs/images/temp_conv.png)
 
 挑戦: 双方向データフロー、テキスト入力
 
