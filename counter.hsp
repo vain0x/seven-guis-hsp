@@ -1,13 +1,10 @@
 ; Task 1. Counter
 
 #packopt name "counter"
-#packopt hide 1
 
 #define EM_SETREADONLY 0x00CF
 
-	gsel , -1
-
-	screen 1, 210, 45
+	screen 0, 210, 45
 	title "Counter"
 
 	font "Biz UDGothic", 14
