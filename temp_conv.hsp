@@ -1,0 +1,82 @@
+; 2. Temperature Converter
+
+#packopt name "temp_conv"
+
+#define WM_COMMAND 0x0111
+#define EN_CHANGE 0x0300
+#define ctype HIWORD(%1) (((%1) >> 16) & 0xFFFF)
+
+	screen 0, 310, 45
+	title "TempConv"
+
+	; background: gray
+	hsvcolor , , 0xF3
+	boxf
+
+	font "Biz UDGothic", 14
+	objmode objmode_usefont
+	hsvcolor , , 0x1B
+
+	pos 10, 10
+	tc = ""
+	input tc, 70, 25
+	tc_id = stat
+
+	pos 85, 15
+	mes "Celsius ="
+
+	pos 155, 10
+	tf = ""
+	input tf, 70, 25
+	tf_id = stat
+
+	pos 230, 15
+	mes "Fahrenheit"
+
+	updating = 0
+
+	oncmd gosub *on_command, WM_COMMAND
+	stop
+
+*on_command
+
+	if lparam == objinfo_hwnd(tc_id) {
+		if HIWORD(wparam) == EN_CHANGE {
+			last_modified = tc_id
+			gosub *update
+		}
+		return
+	}
+	if lparam == objinfo_hwnd(tf_id) {
+		if HIWORD(wparam) == EN_CHANGE {
+			last_modified = tf_id
+			gosub *update
+		}
+		return
+	}
+	return
+
+*update
+
+	if updating : return
+	updating = 1
+
+	logmes strf("tc = '%s', tf = '%s'", tc, tf)
+
+	; celsius value
+	cv = int(tc)
+	; fahrenheit value
+	fv = int(tf)
+
+	if last_modified == tc_id && tc == str(cv) {
+		; celsius is input, update fanrenheit
+		fv = int(double(cv) * 9 / 5 + 32)
+		objprm tf_id, str(fv)
+	} else : if last_modified == tf_id && tf == str(fv) {
+		; fahrenheit is input, update celsius
+		cv = int((double(fv) - 32) * 5 / 9)
+		objprm tc_id, str(cv)
+	}
+
+	updating = 0
+	return
