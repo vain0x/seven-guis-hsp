@@ -1,0 +1,184 @@
+; 3. Flight Booker
+
+#packopt name "flight"
+
+#include "gdi32.as"
+
+#define WM_COMMAND 0x0111
+#define WM_CTLCOLOREDIT 0x0133
+#define EN_CHANGE 0x0300
+#define CBN_SELCHANGE 1
+
+#define ctype HIWORD(%1) (((%1) >> 16) & 0xFFFF)
+#define ctype COLORREF(%1, %2, %3) ((%1) | (%2) << 8 | ((%3) << 16))
+
+	screen 0, 220, 150
+	title "Book Flight"
+
+	today = strf("%04d-%02d-%02d", gettime(0), gettime(1), gettime(3))
+
+	; initialize state
+	start_date = today
+	is_start_date_valid = 1
+	return_date = start_date
+	is_return_date_valid = 1
+
+	updating = 0
+
+	; generate GDI objects
+	h_red_brush = CreateSolidBrush(COLORREF(255, 0, 0))
+	h_white_brush = GetStockObject(0) ; WHITE_BRUSH
+
+	; background: gray
+	hsvcolor , , 0xF3
+	boxf
+
+	font "Biz UDGothic", 14
+	objmode objmode_usefont
+	hsvcolor , , 0x1B
+
+	; 0: one-way, 1: return
+	py = 10
+	pos 10, py
+	mode = 0
+	objsize 200, 25
+	combox mode, , "one-way flight\nreturn flight"
+	mode_combox_id = stat
+
+	py += 35
+	pos 10, py
+	input start_date, 200, 25
+	start_input_id = stat
+	is_start_input_enabled = 1
+
+	py += 35
+	pos 10, py
+	input return_date, 200, 25
+	return_input_id = stat
+	is_return_input_enabled = 1
+
+	py += 35
+	pos 10, py
+	button gosub "Book", *book_click
+	book_button_id = stat
+	is_button_enabled = 1
+
+	oncmd gosub *on_command, WM_COMMAND
+	oncmd gosub *on_ctl_color_edit, WM_CTLCOLOREDIT
+
+	; initial update
+	gosub *update
+	stop
+
+*on_command
+
+	if lparam == objinfo_hwnd(mode_combox_id) {
+		if HIWORD(wparam) == CBN_SELCHANGE {
+			gosub *update
+		}
+		return
+	}
+	if lparam == objinfo_hwnd(start_input_id) {
+		if HIWORD(wparam) == EN_CHANGE {
+			gosub *update
+		}
+		return
+	}
+	if lparam == objinfo_hwnd(return_input_id) {
+		if HIWORD(wparam) == EN_CHANGE {
+			gosub *update
+		}
+		return
+	}
+	return
+
+*on_ctl_color_edit
+
+	if lparam == objinfo_hwnd(start_input_id) {
+		if is_start_date_valid {
+			return h_white_brush
+		} else {
+			return h_red_brush
+		}
+	}
+	if lparam == objinfo_hwnd(return_input_id) {
+		if is_return_date_valid {
+			return h_white_brush
+		} else {
+			return h_red_brush
+		}
+	}
+	return
+
+*update
+
+	if updating : return
+	updating = 1
+
+	logmes strf("mode = %d, start_date = '%s', return_date = '%s'", mode, start_date, return_date)
+
+	is_start_date_valid = is_valid_date(start_date)
+
+	; (mode 1: return flight)
+	is_return_date_valid = mode != 1 || is_valid_date(return_date)
+
+	; (mode 1: return flight)
+	is_return_input_enabled = mode == 1
+	objenable return_input_id, is_return_input_enabled
+
+	if mode == 0 {
+		is_button_enabled = is_start_date_valid
+	} else {
+		is_button_enabled = is_start_date_valid && is_return_date_valid && (start_date != return_date) <= 0
+	}
+	objenable book_button_id, is_button_enabled
+
+	updating = 0
+	return
+
+*book_click
+
+	assert is_button_enabled
+
+	if mode == 0 {
+		message = strf("You have booked a one-way flight on %s.", start_date)
+	} else {
+		message = strf("You have booked a return flight from %s to %s.", start_date, return_date)
+	}
+	dialog message, 0, "Book Flight"
+
+	; reset
+	updating = 1
+	objprm mode_combox_id, 0
+	objprm start_input_id, today
+	objprm return_input_id, today
+	updating = 0
+	gosub *update
+	return
+
+; ================================================
+
+#module
+
+; FIXME: implement correctly
+; checks if input string is a valid date in `yyyy-MM-dd` format
+#defcfunc is_valid_date str date_str, \
+	local s, local year, local month, local d, \
+	local i
+
+	s = date_str
+
+	if strlen(s) != 10 : return 0
+
+	year = int(strmid(s, 0, 4))
+	month = int(strmid(s, 5, 2))
+	d = int(strmid(s, 8, 2))
+
+	if year < 1970 || 2999 < year : return 0
+	if month < 1 || 12 < month : return 0
+	if d < 1 || 31 < d : return 0
+
+	; YOSHI!
+	return 1
+
+#global
