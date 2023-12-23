@@ -96,8 +96,48 @@ tasks: https://7guis.github.io/7guis/
         - `yyyy-MM-dd` 形式なので、そのまま文字列として比較すれば日付の前後関係を判定できる
         - HSP3では、文字列は `(s != t) <= 0` のように比較できる
 
-## 4. ...
+## 4. Timer
+
+![timer screenshot](docs/images/timer.png)
+
+挑戦: 並行性、ユーザーとシグナルの相互作用、レスポンシブ性
+
+仕様:
+
+> https://7guis.github.io/7guis/tasks#timer
+
+- ゲージGとラベルがあり、実行中のタイマーの経過時間を表示する
+- スライダーSでタイマーの継続時間(duration) **d** を調整できる
+    - タイマーが実行中でも設定を変更でき、設定が変更されたらタイマーをリセットする
+    - スライダーを少しでも動かしたら設定の変更とみなす (スライダーのつまみを「離した」ときだけはない)
+- ボタン **R** を押すと、タイマーをリセットする
+
+実装:
+
+[timer.hsp](timer.hsp)
+
+- ゲージはWin32 APIの [ProgressBar] コントロールを使う
+    - winobj命令を使って配置できる
+- スライダーはWin32 APIの [Trackbar] コントロールを使う
+- タイマーは [ウィンドウタイマー](http://chokuto.ifdef.jp/advanced/usertimer.html) を参照
+    - (`SetTimer` でタイマーを作り、`KillTimer` で破棄する。`WM_TIMER` メッセージを購読して通知を受け取る)
+    - タイマーは16ミリ秒ごとに設定する。これにより、1秒あたり60回ぐらいの頻度で通知を受け取れる (1000/60 ≒ 16)
+    - タイマーの通知を受け取るたびに、タイマーの開始時刻と現在時刻の差を求めて、プログレスバーの進捗や経過時間の表示を更新する
+        - 経過時間の取得には [timeGetTime] 関数を使う
+        - 持続時間を過ぎたら、タイマーを破棄する
+    - タイマーをリセットするときは、いまタイマーが動いているなら破棄し、新しくタイマーを作る
+        - タイマーが動いているかどうかを変数で持つ (is_timer_set)。タイマーをリセットするときはこの変数を参照し、タイマーの破棄が必要か判断する
+- 入力の変更:
+    - トラックバーの変更は [WM_HSCROLL] メッセージで受け取れる
+        - つまみをドラッグすると、wparamのLOWORDが `TB_THUMBTRACK` であるメッセージが送られてきて、wparamのHIWORDにトラックバーの値が渡される
+        - (トラックバーの操作方法によっては通知が来ない?)
+
+## 5. ...
 
 
 
 [WM_CTLCOLOREDIT]: https://learn.microsoft.com/en-us/windows/win32/controls/wm-ctlcoloredit
+[ProgressBar]: https://learn.microsoft.com/ja-jp/windows/win32/controls/progress-bar-control-reference
+[Trackbar]: https://learn.microsoft.com/ja-jp/windows/win32/controls/trackbar-control-reference
+[WM_HSCROLL]: https://learn.microsoft.com/ja-jp/windows/win32/controls/wm-hscroll
+[timeGetTime]: https://learn.microsoft.com/ja-jp/windows/win32/api/timeapi/nf-timeapi-timegettime

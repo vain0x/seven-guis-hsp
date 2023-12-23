@@ -1,0 +1,150 @@
+; 4. Timer
+
+#include "user32.as"
+
+#uselib "winmm.dll"
+#cfunc timeGetTime "timeGetTime"
+
+#define WS_CHILD        0x40000000
+#define WS_VISIBLE      0x10000000
+#define WM_TIMER        0x0113
+#define WM_HSCROLL      0x0114
+#define WM_USER         0x0400
+
+#define PROGRESS_CLASS "msctls_progress32"
+#const PBM_SETRANGE     (WM_USER + 1)
+#const PBM_SETPOS       (WM_USER + 2)
+#const PBM_DELTAPOS     (WM_USER + 3)
+#const PBM_SETSTEP      (WM_USER + 4)
+#const PBM_STEPIT       (WM_USER + 5)
+#const PBM_SETRANGE32   (WM_USER + 6)
+
+#define TRACKBAR_CLASS  "msctls_trackbar32"
+#const TBM_SETPOS       (WM_USER + 5)
+#const TBM_SETRANGE     (WM_USER + 6)
+#define TB_THUMBTRACK   5
+
+#define ctype LOWORD(%1) ((%1) & 0xFFFF)
+#define ctype HIWORD(%1) (((%1) >> 16) & 0xFFFF)
+#define ctype MAKELONG(%1, %2) (((%1) & 0xFFFF) | (((%2) & 0xFFFF) << 16))
+
+#define k_timer_id 1
+
+#const k_min_duration 100 ; 0.1s
+#const k_max_duration (30 * 1000) ; 30s
+
+; ================================================
+
+	screen 0, 220, 150
+	title "Timer"
+
+	; initialize
+	elapse = 0
+	duration = 1000
+	timer_start = 0
+	is_timer_set = 0
+
+	font "Biz UDGothic", 14
+	objmode objmode_usefont
+	hsvcolor , , 0x1B
+
+	; Progress Bar (gauge)
+	; https://learn.microsoft.com/ja-jp/windows/win32/controls/progress-bar-control-reference
+	pos 10, 10
+	winobj PROGRESS_CLASS, "", 0, WS_CHILD | WS_VISIBLE, 200, 25, 0, 0
+	progress_id = stat
+
+	sendmsg objinfo_hwnd(progress_id), PBM_SETRANGE, 0, MAKELONG(0, duration)
+	sendmsg objinfo_hwnd(progress_id), PBM_SETPOS, 0, 0
+
+	; Elapse label
+	; (see *draw)
+
+	; Trackbar (slider)
+	; https://learn.microsoft.com/ja-jp/windows/win32/controls/trackbar-control-reference
+	pos 10, 80
+	winobj TRACKBAR_CLASS, "", 0, WS_CHILD | WS_VISIBLE, 200, 25, 0, 0
+	trackbar_id = stat
+
+	sendmsg objinfo_hwnd(trackbar_id), TBM_SETRANGE, 0, MAKELONG(k_min_duration, k_max_duration)
+	sendmsg objinfo_hwnd(trackbar_id), TBM_SETPOS, 1, duration
+
+	; Reset button
+	pos 10, 115
+	objmode objmode_usefont
+	objsize 200, 25
+	button gosub "Reset", *restart_timer
+
+	oncmd gosub *on_timer, WM_TIMER
+	oncmd gosub *on_hscroll, WM_HSCROLL
+
+	gosub *draw
+	gosub *restart_timer
+	stop
+
+*draw
+
+	redraw 2
+
+	; background: gray
+	hsvcolor ,, 0xF3
+	boxf
+
+	pos 10, 50
+	hsvcolor ,, 0x1B
+	mes strf("%.3f%s", double(elapse) / 1000, "s")
+
+	redraw
+	return
+
+*on_timer
+
+	assert is_timer_set
+	elapse = timeGetTime() - timer_start
+	if elapse >= duration {
+		elapse = duration
+		logmes "finish timer"
+		gosub *stop_timer
+	}
+
+	sendmsg objinfo_hwnd(progress_id), PBM_SETPOS, elapse, 0
+	gosub *draw
+	return
+
+*on_hscroll
+
+	if lparam == objinfo_hwnd(trackbar_id) {
+		if LOWORD(wparam) == TB_THUMBTRACK {
+			duration = HIWORD(wparam)
+			logmes "duration changed: " + duration
+			gosub *restart_timer
+		}
+	}
+	return
+
+*restart_timer
+
+	gosub *stop_timer
+
+	if duration > 0 {
+		logmes "start timer"
+
+		; http://chokuto.ifdef.jp/advanced/usertimer.html
+		; 16 milliseconds (60 FPS)
+		SetTimer hwnd, k_timer_id, 16, 0
+		timer_start = timeGetTime()
+		timer_duration = duration
+		is_timer_set = 1
+
+		sendmsg objinfo_hwnd(progress_id), PBM_SETRANGE, 0, MAKELONG(0, duration)
+	}
+	return
+
+*stop_timer
+
+	if is_timer_set {
+		logmes strf("stop timer %d/%d (%f)", elapse, timer_duration, double(elapse) / timer_duration)
+		KillTimer hwnd, k_timer_id
+		is_timer_set = 0
+	}
+	return
