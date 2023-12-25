@@ -27,27 +27,20 @@
 	person_count = 0
 	sdim person_names
 	sdim person_surnames
+	sdim person_fullnames
+	dim person_visible
+	dim person_deleted
+
+	; list of filtered persons
+	view_count = 0
+	dim view_person_indexes
 
 	current_list = ""
 	current_index = -1
 	current_prefix = ""
+	prefix_len = 0
 	current_name = ""
 	current_surname = ""
-
-	; Default values
-	person_names(person_count) = "Emil"
-	person_surnames(person_count) = "Hans"
-	person_count++
-	person_names(person_count) = "Mustermann"
-	person_surnames(person_count) = "Max"
-	person_count++
-	person_names(person_count) = "Tisch"
-	person_surnames(person_count) = "Roman"
-	person_count++
-
-	repeat person_count
-		current_list += strf("%s, %s\n", person_names(cnt), person_surnames(cnt))
-	loop
 
 	; background: gray
 	hsvcolor ,, 0xF3
@@ -68,7 +61,7 @@
 	; Listbox
 	pos 10, 45
 	objsize 200, 25
-	listbox current_index, 200, current_list
+	listbox current_index, 200, ""
 	listbox_id = stat
 
 	; Right:
@@ -87,26 +80,52 @@
 	; Bottom:
 	objsize 80, 25
 	pos 10, 265
-	button gosub "Create", *create_click
+	button gosub "Create", *on_create_click
 	create_button_id = stat
 
 	pos 100, 265
-	button gosub "Update", *update_click
+	button gosub "Update", *on_update_click
 	update_button_id = stat
 
 	pos 190, 265
-	button gosub "Delete", *delete_click
+	button gosub "Delete", *on_delete_click
 	delete_button_id = stat
 
 	; TODO: handle WM_SIZING
 	oncmd gosub *on_command, WM_COMMAND
+
+	; init:
+	; Default values
+	person_names(person_count) = "Hans"
+	person_surnames(person_count) = "Emil"
+	person_deleted(person_count) = 0
+	person_count++
+
+	person_names(person_count) = "Max"
+	person_surnames(person_count) = "Mustermann"
+	person_deleted(person_count) = 0
+	person_count++
+
+	person_names(person_count) = "Roman"
+	person_surnames(person_count) = "Tisch"
+	person_deleted(person_count) = 0
+	person_count++
+
+	gosub *revalidate_persons
+	gosub *reset_listbox
 	stop
+
+; ------------------------------------------------
+; View events
+; ------------------------------------------------
+
+; These labels are called by UI events (e.g. window messages, button click)
 
 *on_command
 
 	if lparam == objinfo_hwnd(prefix_input_id) {
 		if HIWORD(wparam) == EN_CHANGE {
-			gosub *update_filter
+			gosub *on_prefix_change
 			return
 		}
 	}
@@ -114,99 +133,190 @@
 		if HIWORD(wparam) == LBN_SELCHANGE {
 			sendmsg objinfo_hwnd(listbox_id), LB_GETCURSEL
 			current_index = stat
-			gosub *listbox_select
+			gosub *on_list_select
 			return
 		}
 	}
 	return
 
-*update_filter
+*on_prefix_change
 
-	; TODO: implement
+	logmes strf("prefix_change(%s)", current_prefix)
+
+	prefix_len = strlen(current_prefix)
+	gosub *reset_listbox
 	return
 
-*listbox_select
+*reset_listbox
 
-	if current_index >= person_count {
-		current_index = -1
+	vi = current_index
+
+	if 0 <= vi && vi < view_count {
+		pi = view_person_indexes(vi)
+	} else {
+		pi = -1
+	}
+	person_index_orig = pi
+
+	gosub *revalidate_persons
+
+	; update listbox contents
+	current_list = ""
+	repeat view_count
+		pi = view_person_indexes(cnt)
+		current_list += person_fullnames(pi)
+		current_list += "\n"
+	loop
+
+	objprm listbox_id, current_list
+
+	; select item (if selected item is still visible)
+	vi = -1
+	if person_index_orig >= 0 {
+		repeat view_count
+			if view_person_indexes(cnt) == person_index_orig {
+				vi = cnt
+				break
+			}
+		loop
+	}
+	objprm listbox_id, vi
+	return
+
+*on_list_select
+
+	logmes strf("select(%d)", current_index)
+
+	vi = current_index
+	if 0 <= vi && vi < view_count {
+		pi = view_person_indexes(vi)
+	} else {
+		pi = -1
 	}
 
-	if current_index < 0 {
+	if pi < 0 {
+		; unselected
 		current_name = ""
 		current_surname = ""
 
-		updating = 1
 		objprm name_input_id, ""
 		objprm surname_input_id, ""
-		updating = 0
 		return
 	}
 
-	current_name = person_names(current_index)
-	current_surname = person_surnames(current_index)
+	assert pi < person_count
+	assert person_visible(pi)
 
-	updating = 1
+	current_name = person_names(pi)
+	current_surname = person_surnames(pi)
+
 	objprm name_input_id, current_name
 	objprm surname_input_id, current_surname
-	updating = 0
 	return
 
-*create_click
+*on_create_click
 
-	current_index = person_count
+	logmes strf("create(%s, %s)", current_surname, current_name)
 
-	person_names(person_count) = current_name
-	person_surnames(person_count) = current_surname
+	; add person
+	pi = person_count
+	person_names(pi) = current_name
+	person_surnames(pi) = current_surname
+	person_deleted(pi) = 0
 	person_count++
 
-	updating = 1
-	sendmsg objinfo_hwnd(listbox_id), LB_INSERTSTRING, current_index, strf("%s, %s", person_names(current_index), person_surnames(current_index))
-	objprm listbox_id, current_index
-	updating = 0
+	gosub *revalidate_persons
 
-	; Update name inputs.
-	gosub *listbox_select
-	return
+	if person_visible(pi) {
+		assert view_count >= 0
+		assert view_person_indexes(view_count - 1) == pi
+		vi = view_count - 1
 
-*update_click
-
-	if current_index < 0 || current_index >= person_count {
-		return
-	}
-
-	person_names(current_index) = current_name
-	person_surnames(current_index) = current_surname
-
-	updating = 1
-	sendmsg objinfo_hwnd(listbox_id), LB_DELETESTRING, current_index
-	sendmsg objinfo_hwnd(listbox_id), LB_INSERTSTRING, current_index, strf("%s, %s", current_name, current_surname)
-	objprm listbox_id, current_index
-	updating = 0
-	return
-
-*delete_click
-
-	if current_index < 0 || current_index >= person_count {
-		return
-	}
-
-	; Remove at index
-	repeat person_count - current_index - 1, current_index
-		person_names(cnt) = person_names(cnt + 1)
-		person_surnames(cnt) = person_surnames(cnt + 1)
-	loop
-	person_count--
-
-	updating = 1
-	sendmsg objinfo_hwnd(listbox_id), LB_DELETESTRING, current_index
-	if current_index == person_count {
-		current_index--
-	}
-	if current_index >= 0 {
+		; add to listbox
+		current_index = vi
+		sendmsg objinfo_hwnd(listbox_id), LB_INSERTSTRING, current_index, person_fullnames(pi)
 		objprm listbox_id, current_index
 	}
-	updating = 0
+	return
 
-	; Update name inputs.
-	gosub *listbox_select
+*on_update_click
+
+	logmes strf("update(%s, %s, %d)", current_surname, current_name, current_index)
+
+	vi = current_index
+	if (0 <= vi && vi < view_count) == 0 : return
+
+	pi = view_person_indexes(vi)
+	assert 0 <= pi && pi < person_count
+	assert person_visible(pi)
+
+	person_surnames(pi) = current_surname
+	person_names(pi) = current_name
+	gosub *revalidate_persons
+
+	; update listbox item
+	sendmsg objinfo_hwnd(listbox_id), LB_DELETESTRING, current_index
+	sendmsg objinfo_hwnd(listbox_id), LB_INSERTSTRING, current_index, person_fullnames(pi)
+	objprm listbox_id, current_index
+	return
+
+*on_delete_click
+
+	logmes strf("delete(%d)", current_index)
+
+	vi = current_index
+	if (0 <= vi && vi < view_count) == 0 : return
+
+	pi = view_person_indexes(vi)
+	assert 0 <= pi && pi < person_count
+	assert person_visible(pi)
+
+	person_names(pi) = ""
+	person_surnames(pi) = ""
+	person_fullnames(pi) = ""
+	person_visible(pi) = 0
+	person_deleted(pi) = 1
+
+	; Remove item at current_index
+	repeat view_count - vi - 1, vi
+		view_person_indexes(cnt) = view_person_indexes(cnt + 1)
+	loop
+	view_count--
+
+	sendmsg objinfo_hwnd(listbox_id), LB_DELETESTRING, vi
+	if vi == view_count {
+		vi--
+	}
+	current_index = vi
+	objprm listbox_id, current_index
+
+	gosub *on_list_select
+	return
+
+; ------------------------------------------------
+; Model
+; ------------------------------------------------
+
+; Computes person_fullnames and person_visible
+*revalidate_persons
+
+	repeat person_count
+		if person_deleted(cnt) : continue
+
+		person_fullnames(cnt) = strf("%s, %s", person_surnames(cnt), person_names(cnt))
+
+		ok = 1
+		if prefix_len >= 1 {
+			ok = strmid(person_fullnames(cnt), 0, prefix_len) == current_prefix
+		}
+		person_visible(cnt) = ok
+	loop
+
+	view_count = 0
+	repeat person_count
+		if person_visible(cnt) {
+			view_person_indexes(view_count) = cnt
+			view_count++
+		}
+	loop
 	return
