@@ -7,6 +7,7 @@
 #include "user32.as"
 
 #define WM_COMMAND 0x0111
+#define WM_SIZING 0x0214
 
 #define EN_CHANGE 0x0300
 #define LBN_SELCHANGE 1
@@ -20,7 +21,10 @@
 ; ================================================
 
 	gsel 0, -1
-	screen 1, 420, 300
+
+	window_w = 420
+	window_h = 300
+	screen 1, ginfo_dispx, ginfo_dispy, screen_hide, ,, window_w, window_h
 	title "CRUD"
 
 	; initialize
@@ -42,57 +46,37 @@
 	current_name = ""
 	current_surname = ""
 
-	; background: gray
-	hsvcolor ,, 0xF3
-	boxf
-
 	font "Biz UDGothic", 14
 	objmode objmode_usefont
-	hsvcolor ,, 0x1B
 
 	; Left:
-	; Filter
-	pos 10, 15
-	mes "Filter prefix:"
-	pos 120, 10
 	input current_prefix, 90, 25
 	prefix_input_id = stat
 
 	; Listbox
-	pos 10, 45
-	objsize 200, 25
 	listbox current_index, 200, ""
 	listbox_id = stat
 
 	; Right:
-	pos 240, 50
-	mes "Name:"
-	pos 310, 45
 	input current_name, 100, 25
 	name_input_id = stat
 
-	pos 240, 85
-	mes "Surname:"
-	pos 310, 80
 	input current_surname, 100, 25
 	surname_input_id = stat
 
-	; Bottom:
+	; Footer:
 	objsize 80, 25
-	pos 10, 265
 	button gosub "Create", *on_create_click
 	create_button_id = stat
 
-	pos 100, 265
 	button gosub "Update", *on_update_click
 	update_button_id = stat
 
-	pos 190, 265
 	button gosub "Delete", *on_delete_click
 	delete_button_id = stat
 
-	; TODO: handle WM_SIZING
 	oncmd gosub *on_command, WM_COMMAND
+	oncmd gosub *on_sizing, WM_SIZING
 
 	; init:
 	; Default values
@@ -111,8 +95,12 @@
 	person_deleted(person_count) = 0
 	person_count++
 
+	gosub *update_layout
 	gosub *revalidate_persons
 	gosub *reset_listbox
+
+	; show main window
+	gsel 1, 1
 	stop
 
 ; ------------------------------------------------
@@ -137,6 +125,79 @@
 			return
 		}
 	}
+	return
+
+*on_sizing
+
+	gosub *update_layout
+	return
+
+*update_layout
+
+	window_w = limit(ginfo_winx, 400)
+	window_h = limit(ginfo_winy, 300)
+
+	margin = 10
+	input_h = 25
+	button_w = 80
+	button_h = 25
+
+	pane_w = window_w / 2 - margin * 2
+	listbox_h = window_h - (input_h + button_h) - margin * 4
+	right_x = window_w / 2 + margin
+	footer_y = input_h + listbox_h + margin * 3
+
+	redraw 2
+
+	; background: gray
+	hsvcolor ,, 0xF3
+	boxf
+
+	; color: black
+	hsvcolor ,, 0x1B
+
+	; Left pane:
+	; Filter
+	label_w = 100
+	input_x = label_w + margin * 2
+	input_y = margin
+	input_w = pane_w - label_w - margin
+	pos margin, margin + 5
+	mes "Filter prefix:"
+	MoveWindow objinfo_hwnd(prefix_input_id), input_x, input_y, input_w, input_h, 1
+
+	; Listbox
+	listbox_y = input_h + margin * 2
+	MoveWindow objinfo_hwnd(listbox_id), margin, listbox_y, pane_w, listbox_h, 1
+
+	; Right pane:
+	; Name field:
+	field_y = input_h + margin * 2
+	label_x = 65
+	input_x = right_x + label_x
+	input_w = pane_w - label_x
+	pos right_x, field_y + 5
+	mes "Name:"
+	MoveWindow objinfo_hwnd(name_input_id), input_x, field_y, input_w, input_h, 1
+
+	; Surname field:
+	field_y += input_h + margin
+	pos right_x, field_y + 5
+	mes "Surname:"
+	MoveWindow objinfo_hwnd(surname_input_id), input_x, field_y, input_w, input_h, 1
+
+	; Footer (buttons):
+	button_x = margin
+	objsize button_w, button_h
+	pos button_x, footer_y
+	MoveWindow objinfo_hwnd(create_button_id), button_x, footer_y, button_w, button_h, 1
+
+	button_x += button_w + margin
+	MoveWindow objinfo_hwnd(update_button_id), button_x, footer_y, button_w, button_h, 1
+
+	button_x += button_w + margin
+	MoveWindow objinfo_hwnd(delete_button_id), button_x, footer_y, button_w, button_h, 1
+	redraw
 	return
 
 *on_prefix_change
