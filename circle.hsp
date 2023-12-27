@@ -1,0 +1,304 @@
+; 6. Circle Drawer
+
+#packopt name "circle"
+
+#include "user32.as"
+
+#define WS_CHILD        0x40000000
+#define WS_VISIBLE      0x10000000
+#define WM_HSCROLL      0x0114
+#define WM_USER         0x0400
+
+#define TRACKBAR_CLASS  "msctls_trackbar32"
+#const TBM_SETPOS       (WM_USER + 5)
+#const TBM_SETRANGE     (WM_USER + 6)
+#define TB_THUMBTRACK   5
+
+#define ctype LOWORD(%1) ((%1) & 0xFFFF)
+#define ctype HIWORD(%1) (((%1) >> 16) & 0xFFFF)
+#define ctype MAKELONG(%1, %2) (((%1) & 0xFFFF) | (((%2) & 0xFFFF) << 16))
+
+; Window IDs
+#const k_window_main 0
+#const k_window_edit 1
+
+; ================================================
+
+	title "CircleDraw"
+
+	; state
+	circle_count = 0
+	dim circle_x
+	dim circle_y
+	dim circle_diam
+
+	; selected circle index
+	current_index = -1
+
+	editing = 0
+	; editing circle index
+	edit_index = -1
+
+	; Main window:
+	font "Biz UDGothic", 14
+	objmode objmode_usefont
+
+	pos 10, 10
+	objsize 100, 25
+	button gosub "Undo", *undo
+
+	pos 120, 10
+	button gosub "Redo", *redo
+
+	; Edit dialog:
+	screen k_window_edit, 280, 80, screen_hide | screen_fixedsize | screen_tool
+	title "Edit - CircleDraw"
+
+	font "Biz UDGothic", 14
+	objmode objmode_usefont
+
+	; Trackbar
+	pos 10, 45
+	winobj TRACKBAR_CLASS, "", 0, WS_CHILD | WS_VISIBLE, 260, 25, 0, 0
+	trackbar_id = stat
+
+	sendmsg objinfo_hwnd(trackbar_id), TBM_SETRANGE, 0, MAKELONG(10, 50)
+	; sendmsg objinfo_hwnd(trackbar_id), TBM_SETPOS, 1, 10
+
+	oncmd gosub *on_hscroll, WM_HSCROLL
+
+	gsel k_window_main, 1
+
+	onexit gosub *on_exit
+
+	; generate default circles
+	randomize
+
+	repeat 4
+		circle_x(circle_count) = rnd(ginfo_winx - 40 - 15)
+		circle_y(circle_count) = rnd(ginfo_winy - 55 - 15)
+		circle_diam(circle_count) = 30
+		circle_count++
+	loop
+
+	; goto *main_loop
+
+*main_loop
+
+	if ginfo_act == k_window_main && editing {
+		gsel k_window_edit, 1
+	}
+
+	gsel k_window_main
+
+	; capture state
+	window_w = ginfo_winx
+	window_h = ginfo_winy
+
+	; compute layout
+	margin = 10
+	button_h = 25
+	canvas_x = margin
+	canvas_y = button_h + margin * 2
+	canvas_w = window_w - margin * 2
+	canvas_h = window_h - canvas_y - margin
+
+	; mouse cursor in canvas
+	mx = -100
+	my = -100
+
+	if ginfo_act == k_window_main {
+		if ginfo_wx1 <= ginfo_mx && ginfo_mx <= ginfo_wx2 {
+			if ginfo_wy1 <= ginfo_my && ginfo_my <= ginfo_wy2 {
+				mx = mousex
+				my = mousey
+				if (canvas_x <= mx && mx <= canvas_x + canvas_w) && (canvas_y <= my && my <= canvas_y + canvas_h) {
+					mx -= canvas_x
+					my -= canvas_y
+				} else {
+					mx = -100
+					my = -100
+				}
+			}
+		}
+	}
+
+	; handle input
+	stick stick_flags
+	left_click = (stick_flags & 0x0100) != 0
+	right_click = (stick_flags & 0x0200) != 0
+
+	if left_click {
+		ci = circle_count
+		circle_x(ci) = mx
+		circle_y(ci) = my
+		circle_diam(ci) = 30
+		circle_count++
+	}
+
+	; compute circles
+	if mx >= 0 {
+		repeat circle_count
+			cx = circle_x(cnt)
+			cy = circle_y(cnt)
+			; radius
+			cr = circle_diam(cnt) / 2
+			; norm_sq
+			cv = norm_sq(cx - mx, cy - my)
+			circle_norm_sq(cnt) = cv
+			; hover: mouse is inside of circle
+			circle_hover(cnt) = cv <= powf(cr, 2)
+		loop
+	} else {
+		repeat circle_count
+			circle_norm_sq(cnt) = 1e9
+			circle_hover(cnt) = 0
+		loop
+	}
+
+	; find selected circle (hover & nearest)
+	if edit_index >= 0 {
+		current_index = edit_index
+	} else {
+		nearest_norm_sq = 1.0e9
+		nearest_index = -1
+		if mx >= 0 {
+			repeat circle_count
+				if circle_hover(cnt) == 0 : continue
+
+				if nearest_norm_sq > circle_norm_sq(cnt) {
+					nearest_norm_sq = circle_norm_sq(cnt)
+					nearest_index = cnt
+				}
+			loop
+		}
+		current_index = nearest_index
+	}
+
+	if right_click && current_index >= 0 {
+		edit_index = current_index
+		gosub *show_edit_dialog
+		gsel k_window_main
+	}
+
+	redraw 2
+
+	; background: gray
+	hsvcolor ,, 0xF3
+	boxf
+
+	; foreground: black
+	hsvcolor ,, 0x1B
+
+	pos window_w - 100, 10
+	mes strf("m=(%d, %d)", mx, my)
+
+	; Canvas:
+	hsvcolor ,, 0x1B ; border: black
+	boxf margin, canvas_y, margin + canvas_w, canvas_y + canvas_h
+
+	hsvcolor ,, 0xFF ; background: white
+	boxf margin + 2, canvas_y + 2, margin + canvas_w - 2, canvas_y + canvas_h - 2
+
+	; circles
+	repeat circle_count
+		px = canvas_x + circle_x(cnt)
+		py = canvas_y + circle_y(cnt)
+		cr = circle_diam(cnt) / 2
+
+		if current_index == cnt {
+			hsvcolor ,, 0xC9 ; gray (fill)
+			circle px - cr, py - cr, px + cr, py + cr, 1
+		}
+
+		hsvcolor ,, 0x1B ; black (border)
+		circle px - cr, py - cr, px + cr, py + cr, 0
+	loop
+
+	redraw
+
+	await 16 ; 1000/60
+	goto *main_loop
+
+*on_exit
+
+	if wparam == k_window_edit {
+		; end edit
+		assert editing
+		editing = 0
+		edit_index = -1
+		gsel k_window_edit, -1
+		return
+	}
+
+	onexit 0
+	end
+	end
+
+*on_hscroll
+
+	gsel k_window_edit
+	if lparam == objinfo_hwnd(trackbar_id) {
+		if LOWORD(wparam) == TB_THUMBTRACK {
+			track_value = HIWORD(wparam)
+			gosub *on_diameter_change
+		}
+	}
+	return
+
+*on_diameter_change
+
+	assert 0 <= edit_index && edit_index < circle_count
+	assert 1 <= track_value && track_value <= 100
+	ci = edit_index
+	circle_diam(ci) = track_value
+	return
+
+*undo
+
+	; TODO: implement
+	return
+
+*redo
+
+	; TODO: implement
+	return
+
+*show_edit_dialog
+
+	assert 0 <= edit_index && edit_index < circle_count
+	assert editing == 0
+
+	editing = 1
+
+	gsel k_window_edit
+	sendmsg objinfo_hwnd(trackbar_id), TBM_SETPOS, 1, circle_diam(edit_index)
+
+	gsel k_window_edit, 1
+
+	redraw 2
+
+	; background: gray
+	hsvcolor ,, 0xF3
+	boxf
+
+	; foreground: black
+	hsvcolor ,, 0x1B
+
+	pos 10, 10
+	ci = edit_index
+	mes strf("Adjust diameter of circle at (%d, %d).", circle_x(ci), circle_y(ci))
+
+	redraw
+	return
+
+; ================================================
+
+#module
+
+; (x^2 + y^2)
+#defcfunc norm_sq double x, double y
+
+	return powf(x, 2) + powf(y, 2)
+
+#global
