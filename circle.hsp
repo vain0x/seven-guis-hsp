@@ -21,6 +21,7 @@
 ; Window IDs
 #const k_window_main 0
 #const k_window_edit 1
+#const k_window_canvas 2
 
 ; ================================================
 
@@ -66,6 +67,9 @@
 	; sendmsg objinfo_hwnd(trackbar_id), TBM_SETPOS, 1, 10
 
 	oncmd gosub *on_hscroll, WM_HSCROLL
+
+	; Canvas buffer:
+	buffer k_window_canvas, 800, 800
 
 	gsel k_window_main, 1
 
@@ -128,7 +132,7 @@
 	left_click = (stick_flags & 0x0100) != 0
 	right_click = (stick_flags & 0x0200) != 0
 
-	if left_click {
+	if left_click && mx >= 0 {
 		ci = circle_count
 		circle_x(ci) = mx
 		circle_y(ci) = my
@@ -181,6 +185,43 @@
 		gsel k_window_main
 	}
 
+	; draw in canvas buffer
+	gsel k_window_canvas
+	redraw 2
+
+	hsvcolor ,, 0xFF ; white
+	boxf 0, 0, canvas_w, canvas_h
+
+	; circles
+	repeat circle_count
+		render_ci(cnt) = cnt
+	loop
+
+	; change rendering order
+	if current_index >= 0 {
+		render_ci(current_index) = circle_count - 1
+		render_ci(circle_count - 1) = current_index
+	}
+
+	repeat circle_count
+		ci = render_ci(cnt)
+		px = circle_x(ci)
+		py = circle_y(ci)
+		cr = circle_diam(ci) / 2 ; radius
+
+		if current_index == ci {
+			hsvcolor ,, 0xC9 ; gray (fill)
+			circle px - cr, py - cr, px + cr, py + cr, 1
+		}
+
+		hsvcolor ,, 0x1B ; black (border)
+		circle px - cr, py - cr, px + cr, py + cr, 0
+	loop
+
+	redraw 1, 0, 0, canvas_w, canvas_h
+
+	; draw in main window
+	gsel k_window_main
 	redraw 2
 
 	; background: gray
@@ -197,23 +238,8 @@
 	hsvcolor ,, 0x1B ; border: black
 	boxf margin, canvas_y, margin + canvas_w, canvas_y + canvas_h
 
-	hsvcolor ,, 0xFF ; background: white
-	boxf margin + 2, canvas_y + 2, margin + canvas_w - 2, canvas_y + canvas_h - 2
-
-	; circles
-	repeat circle_count
-		px = canvas_x + circle_x(cnt)
-		py = canvas_y + circle_y(cnt)
-		cr = circle_diam(cnt) / 2
-
-		if current_index == cnt {
-			hsvcolor ,, 0xC9 ; gray (fill)
-			circle px - cr, py - cr, px + cr, py + cr, 1
-		}
-
-		hsvcolor ,, 0x1B ; black (border)
-		circle px - cr, py - cr, px + cr, py + cr, 0
-	loop
+	pos margin + 2, canvas_y + 2
+	gcopy k_window_canvas, 0, 0, canvas_w - 4, canvas_h - 4
 
 	redraw
 
