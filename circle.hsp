@@ -23,6 +23,10 @@
 #const k_window_edit 1
 #const k_window_canvas 2
 
+; Change types
+#enum k_ct_add = 1
+#enum k_ct_resize
+
 ; ================================================
 
 	title "CircleDraw"
@@ -32,6 +36,7 @@
 	dim circle_x
 	dim circle_y
 	dim circle_diam
+	dim circle_deleted
 
 	; selected circle index
 	current_index = -1
@@ -39,6 +44,16 @@
 	editing = 0
 	; editing circle index
 	edit_index = -1
+	; old diameter of editing circle
+	edit_diam = -1
+
+	undo_count = 0
+	redo_count = 0
+	dim change_type
+	; type add -> ci
+	dim change_ci
+	; type resize -> (ci, diam)
+	dim change_diam
 
 	; Main window:
 	font "Biz UDGothic", 14
@@ -82,6 +97,7 @@
 		circle_x(circle_count) = rnd(ginfo_winx - 40 - 15)
 		circle_y(circle_count) = rnd(ginfo_winy - 55 - 15)
 		circle_diam(circle_count) = 30
+		circle_deleted(circle_count) = 0
 		circle_count++
 	loop
 
@@ -133,16 +149,27 @@
 	right_click = (stick_flags & 0x0200) != 0
 
 	if left_click && mx >= 0 {
+		; add circle
 		ci = circle_count
 		circle_x(ci) = mx
 		circle_y(ci) = my
 		circle_diam(ci) = 30
+		circle_deleted(ci) = 0
 		circle_count++
+
+		; record change
+		chi = undo_count
+		change_type(chi) = k_ct_add
+		change_ci(chi) = ci
+		undo_count++
+		redo_count = 0
 	}
 
 	; compute circles
 	if mx >= 0 {
 		repeat circle_count
+			if circle_deleted(cnt) : continue
+
 			cx = circle_x(cnt)
 			cy = circle_y(cnt)
 			; radius
@@ -168,6 +195,7 @@
 		nearest_index = -1
 		if mx >= 0 {
 			repeat circle_count
+				if circle_deleted(cnt) : continue
 				if circle_hover(cnt) == 0 : continue
 
 				if nearest_norm_sq > circle_norm_sq(cnt) {
@@ -205,6 +233,8 @@
 
 	repeat circle_count
 		ci = render_ci(cnt)
+		if circle_deleted(ci) : continue
+
 		px = circle_x(ci)
 		py = circle_y(ci)
 		cr = circle_diam(ci) / 2 ; radius
@@ -251,8 +281,18 @@
 	if wparam == k_window_edit {
 		; end edit
 		assert editing
+
+		; add change
+		chi = undo_count
+		change_type(chi) = k_ct_resize
+		change_ci(chi) = edit_index
+		change_diam(chi) = edit_diam
+		undo_count++
+		redo_count = 0
+
 		editing = 0
 		edit_index = -1
+		edit_diam = -1
 		gsel k_window_edit, -1
 		return
 	}
@@ -282,12 +322,48 @@
 
 *undo
 
-	; TODO: implement
+	if undo_count == 0 : return
+
+	undo_count--
+	redo_count++
+	chi = undo_count
+
+	if change_type(chi) == k_ct_add {
+		; delete circle
+		ci = change_ci(chi)
+		circle_deleted(ci) = 1
+	} else : if change_type(chi) == k_ct_resize {
+		; resize circle
+		ci = change_ci(chi)
+		current_diam = circle_diam(ci)
+		circle_diam(ci) = change_diam(chi)
+		change_diam(chi) = current_diam
+	} else {
+		assert
+	}
 	return
 
 *redo
 
-	; TODO: implement
+	if redo_count == 0 : return
+
+	chi = undo_count
+	undo_count++
+	redo_count--
+
+	if change_type(chi) == k_ct_add {
+		; enable circle
+		ci = change_ci(chi)
+		circle_deleted(ci) = 0
+	} else : if change_type(chi) == k_ct_resize {
+		; resize circle
+		ci = change_ci(chi)
+		current_diam = circle_diam(ci)
+		circle_diam(ci) = change_diam(chi)
+		change_diam(chi) = current_diam
+	} else {
+		assert
+	}
 	return
 
 *show_edit_dialog
@@ -296,6 +372,7 @@
 	assert editing == 0
 
 	editing = 1
+	edit_diam = circle_diam(edit_index)
 
 	gsel k_window_edit
 	sendmsg objinfo_hwnd(trackbar_id), TBM_SETPOS, 1, circle_diam(edit_index)
