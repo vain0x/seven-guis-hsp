@@ -31,28 +31,29 @@
 
 	title "CircleDraw"
 
-	; state
 	circle_count = 0
 	dim circle_x
 	dim circle_y
+	; (diameter)
 	dim circle_diam
+	; (0: not deleted, 1: deleted)
 	dim circle_deleted
 
 	; selected circle index
-	current_index = -1
+	selected_ci = -1
 
 	editing = 0
 	; editing circle index
-	edit_index = -1
+	edit_ci = -1
 	; old diameter of editing circle
 	edit_diam = -1
 
 	undo_count = 0
 	redo_count = 0
 	dim change_type
-	; type add -> ci
+	; type add/resize -> (circle index)
 	dim change_ci
-	; type resize -> (ci, diam)
+	; type resize -> changed diam
 	dim change_diam
 
 	; Main window:
@@ -79,13 +80,12 @@
 	trackbar_id = stat
 
 	sendmsg objinfo_hwnd(trackbar_id), TBM_SETRANGE, 0, MAKELONG(10, 50)
-	; sendmsg objinfo_hwnd(trackbar_id), TBM_SETPOS, 1, 10
 
 	oncmd gosub *on_hscroll, WM_HSCROLL
 
-	; Canvas buffer:
 	buffer k_window_canvas, 800, 800
 
+	; show main window
 	gsel k_window_main, 1
 
 	onexit gosub *on_exit
@@ -94,10 +94,11 @@
 	randomize
 
 	repeat 4
-		circle_x(circle_count) = rnd(ginfo_winx - 40 - 15)
-		circle_y(circle_count) = rnd(ginfo_winy - 55 - 15)
-		circle_diam(circle_count) = 30
-		circle_deleted(circle_count) = 0
+		ci = circle_count
+		circle_x(ci) = rnd(ginfo_winx - 40 - 15)
+		circle_y(ci) = rnd(ginfo_winy - 55 - 15)
+		circle_diam(ci) = 30
+		circle_deleted(ci) = 0
 		circle_count++
 	loop
 
@@ -105,6 +106,7 @@
 
 *main_loop
 
+	; keep modal
 	if ginfo_act == k_window_main && editing {
 		gsel k_window_edit, 1
 	}
@@ -124,23 +126,20 @@
 	canvas_h = window_h - canvas_y - margin
 
 	; mouse cursor in canvas
-	mx = -100
-	my = -100
+	mx = mousex
+	my = mousey
 
-	if ginfo_act == k_window_main {
-		if ginfo_wx1 <= ginfo_mx && ginfo_mx <= ginfo_wx2 {
-			if ginfo_wy1 <= ginfo_my && ginfo_my <= ginfo_wy2 {
-				mx = mousex
-				my = mousey
-				if (canvas_x <= mx && mx <= canvas_x + canvas_w) && (canvas_y <= my && my <= canvas_y + canvas_h) {
-					mx -= canvas_x
-					my -= canvas_y
-				} else {
-					mx = -100
-					my = -100
-				}
-			}
-		}
+	ok = ginfo_act == k_window_main
+	ok &&= ginfo_wx1 <= ginfo_mx && ginfo_mx <= ginfo_wx2
+	ok &&= ginfo_wy1 <= ginfo_my && ginfo_my <= ginfo_wy2
+	ok &&= canvas_x <= mx && mx <= canvas_x + canvas_w
+	ok &&= canvas_y <= my && my <= canvas_y + canvas_h
+	if ok {
+		mx -= canvas_x
+		my -= canvas_y
+	} else {
+		mx = -100
+		my = -100
 	}
 
 	; handle input
@@ -157,7 +156,7 @@
 		circle_deleted(ci) = 0
 		circle_count++
 
-		; record change
+		; add change
 		chi = undo_count
 		change_type(chi) = k_ct_add
 		change_ci(chi) = ci
@@ -172,43 +171,39 @@
 
 			cx = circle_x(cnt)
 			cy = circle_y(cnt)
-			; radius
-			cr = circle_diam(cnt) / 2
-			; norm_sq
-			cv = norm_sq(cx - mx, cy - my)
-			circle_norm_sq(cnt) = cv
-			; hover: mouse is inside of circle
-			circle_hover(cnt) = cv <= powf(cr, 2)
+			cr = circle_diam(cnt) / 2 ; radius
+			circle_dist(cnt) = powf(cx - mx, 2) + powf(cy - my, 2)
+			circle_hover(cnt) = circle_dist(cnt) <= powf(cr, 2)
 		loop
 	} else {
 		repeat circle_count
-			circle_norm_sq(cnt) = 1e9
+			circle_dist(cnt) = 1e9
 			circle_hover(cnt) = 0
 		loop
 	}
 
 	; find selected circle (hover & nearest)
-	if edit_index >= 0 {
-		current_index = edit_index
+	if edit_ci >= 0 {
+		selected_ci = edit_ci
 	} else {
-		nearest_norm_sq = 1.0e9
-		nearest_index = -1
+		nearest_dist = 1.0e9
+		nearest_ci = -1
 		if mx >= 0 {
 			repeat circle_count
 				if circle_deleted(cnt) : continue
 				if circle_hover(cnt) == 0 : continue
 
-				if nearest_norm_sq > circle_norm_sq(cnt) {
-					nearest_norm_sq = circle_norm_sq(cnt)
-					nearest_index = cnt
+				if nearest_dist > circle_dist(cnt) {
+					nearest_dist = circle_dist(cnt)
+					nearest_ci = cnt
 				}
 			loop
 		}
-		current_index = nearest_index
+		selected_ci = nearest_ci
 	}
 
-	if right_click && current_index >= 0 {
-		edit_index = current_index
+	if right_click && selected_ci >= 0 {
+		edit_ci = selected_ci
 		gosub *show_edit_dialog
 		gsel k_window_main
 	}
@@ -226,26 +221,26 @@
 	loop
 
 	; change rendering order
-	if current_index >= 0 {
-		render_ci(current_index) = circle_count - 1
-		render_ci(circle_count - 1) = current_index
+	if selected_ci >= 0 {
+		render_ci(selected_ci) = circle_count - 1
+		render_ci(circle_count - 1) = selected_ci
 	}
 
 	repeat circle_count
 		ci = render_ci(cnt)
 		if circle_deleted(ci) : continue
 
-		px = circle_x(ci)
-		py = circle_y(ci)
+		cx = circle_x(ci)
+		cy = circle_y(ci)
 		cr = circle_diam(ci) / 2 ; radius
 
-		if current_index == ci {
+		if selected_ci == ci {
 			hsvcolor ,, 0xC9 ; gray (fill)
-			circle px - cr, py - cr, px + cr, py + cr, 1
+			circle cx - cr, cy - cr, cx + cr, cy + cr, 1
 		}
 
 		hsvcolor ,, 0x1B ; black (border)
-		circle px - cr, py - cr, px + cr, py + cr, 0
+		circle cx - cr, cy - cr, cx + cr, cy + cr, 0
 	loop
 
 	redraw 1, 0, 0, canvas_w, canvas_h
@@ -285,20 +280,19 @@
 		; add change
 		chi = undo_count
 		change_type(chi) = k_ct_resize
-		change_ci(chi) = edit_index
+		change_ci(chi) = edit_ci
 		change_diam(chi) = edit_diam
 		undo_count++
 		redo_count = 0
 
 		editing = 0
-		edit_index = -1
+		edit_ci = -1
 		edit_diam = -1
 		gsel k_window_edit, -1
 		return
 	}
 
 	onexit 0
-	end
 	end
 
 *on_hscroll
@@ -314,10 +308,9 @@
 
 *on_diameter_change
 
-	assert 0 <= edit_index && edit_index < circle_count
-	assert 1 <= track_value && track_value <= 100
-	ci = edit_index
-	circle_diam(ci) = track_value
+	assert 0 <= edit_ci && edit_ci < circle_count
+	assert track_value >= 1
+	circle_diam(edit_ci) = track_value
 	return
 
 *undo
@@ -329,7 +322,7 @@
 	chi = undo_count
 
 	if change_type(chi) == k_ct_add {
-		; delete circle
+		; hide circle
 		ci = change_ci(chi)
 		circle_deleted(ci) = 1
 	} else : if change_type(chi) == k_ct_resize {
@@ -352,7 +345,7 @@
 	redo_count--
 
 	if change_type(chi) == k_ct_add {
-		; enable circle
+		; show circle
 		ci = change_ci(chi)
 		circle_deleted(ci) = 0
 	} else : if change_type(chi) == k_ct_resize {
@@ -368,14 +361,14 @@
 
 *show_edit_dialog
 
-	assert 0 <= edit_index && edit_index < circle_count
+	assert 0 <= edit_ci && edit_ci < circle_count
 	assert editing == 0
 
 	editing = 1
-	edit_diam = circle_diam(edit_index)
+	edit_diam = circle_diam(edit_ci)
 
 	gsel k_window_edit
-	sendmsg objinfo_hwnd(trackbar_id), TBM_SETPOS, 1, circle_diam(edit_index)
+	sendmsg objinfo_hwnd(trackbar_id), TBM_SETPOS, 1, circle_diam(edit_ci)
 
 	gsel k_window_edit, 1
 
@@ -389,19 +382,8 @@
 	hsvcolor ,, 0x1B
 
 	pos 10, 10
-	ci = edit_index
+	ci = edit_ci
 	mes strf("Adjust diameter of circle at (%d, %d).", circle_x(ci), circle_y(ci))
 
 	redraw
 	return
-
-; ================================================
-
-#module
-
-; (x^2 + y^2)
-#defcfunc norm_sq double x, double y
-
-	return powf(x, 2) + powf(y, 2)
-
-#global
