@@ -3,6 +3,7 @@
 #packopt name "flight"
 
 #include "gdi32.as"
+#include "kernel32.as" ; for SystemTimeToFileTime
 
 #define WM_COMMAND 0x0111
 #define WM_CTLCOLOREDIT 0x0133
@@ -10,7 +11,7 @@
 #define CBN_SELCHANGE 1
 
 #define ctype HIWORD(%1) (((%1) >> 16) & 0xFFFF)
-#define ctype COLORREF(%1, %2, %3) ((%1) | (%2) << 8 | ((%3) << 16))
+#define ctype COLORREF(%1, %2, %3) ((%1) | ((%2) << 8) | ((%3) << 16))
 
 	screen 0, 220, 150
 	title "Book Flight"
@@ -160,25 +161,54 @@
 
 #module
 
-; FIXME: implement correctly
 ; checks if input string is a valid date in `yyyy-MM-dd` format
 #defcfunc is_valid_date str date_str, \
 	local s, local year, local month, local d, \
-	local i
+	local ok, local ch, local st, local ft
 
 	s = date_str
 
+	; parse date
 	if strlen(s) != 10 : return 0
+
+	ok = 1
+	repeat 10
+		ch = peek(s, cnt)
+		if cnt == 4 || cnt == 7 {
+			if ch != '-' {
+				ok = 0
+				break
+			}
+		} else : if ch < '0' || '9' < ch {
+			ok = 0
+			break
+		}
+	loop
+	if ok == 0 : return 0
 
 	year = int(strmid(s, 0, 4))
 	month = int(strmid(s, 5, 2))
 	d = int(strmid(s, 8, 2))
 
+	; rough validation
 	if year < 1970 || 2999 < year : return 0
 	if month < 1 || 12 < month : return 0
 	if d < 1 || 31 < d : return 0
 
-	; YOSHI!
-	return 1
+	; use SystemTimeToFileTime function
+	; struct SYSTEMTIME
+	dim st, 8
+	wpoke st, 0, year
+	wpoke st, 2, month
+	wpoke st, 6, d
+
+	; struct FILETIME (contents not used)
+	dim ft, 2
+
+	SystemTimeToFileTime varptr(st), varptr(ft)
+	return stat != 0
 
 #global
+
+	; omajinai
+	SystemTimeToFileTime

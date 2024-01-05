@@ -74,7 +74,7 @@ tasks: https://7guis.github.io/7guis/
 
 実装:
 
-[flight.hsp](flight.hsp) (※不完全)
+[flight.hsp](flight.hsp)
 
 - combox, input, button命令を使う
 - 入力の変更検知:
@@ -91,10 +91,14 @@ tasks: https://7guis.github.io/7guis/
     - 日付の文字列形式:
         `yyyy-MM-dd` 形式 (RFC3339) のみ扱う
         (もっと柔軟なほうがいい)
-    - 日付の有効性: 日付が有効かどうかの判定は **未実装** で、`2023-02-31` (存在しない日付) でも通ってしまう……
+    - 日付の有効性:
+        - 文字列として適切であることと、その日付が存在することの両方を検査する
+        - [SystemTimeToFileTime] 関数が成功するかどうかで判定できる
     - 日付の大小比較:
         - `yyyy-MM-dd` 形式なので、そのまま文字列として比較すれば日付の前後関係を判定できる
         - HSP3では、文字列は `(s != t) <= 0` のように比較できる
+
+[SystemTimeToFileTime]: https://learn.microsoft.com/ja-jp/windows/win32/api/timezoneapi/nf-timezoneapi-systemtimetofiletime
 
 ## 4. Timer
 
